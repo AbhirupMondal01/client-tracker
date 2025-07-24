@@ -122,7 +122,11 @@ export default function App() {
             });
             await batch.commit();
             const newClientData = { id: newClientRef.id, name: clientName.trim(), createdAt: new Date() };
-            setClients(prevClients => [...prevClients, newClientData].sort((a, b) => a.createdAt.seconds - b.createdAt.seconds));
+            setClients(prevClients => [...prevClients, newClientData].sort((a, b) => {
+                const timeA = a.createdAt?.seconds || 0;
+                const timeB = b.createdAt?.seconds || 0;
+                return timeA - timeB;
+            }));
             setSelectedClient(newClientData);
         } catch (e) {
             console.error("Error adding client:", e);
@@ -418,41 +422,45 @@ const ErrorState = ({ message }) => <div className="flex items-center justify-ce
 const EmptyState = () => <div className="flex items-center justify-center h-full"><div className="text-center p-10 border-2 border-dashed border-slate-700 rounded-2xl"><FolderKanban size={56} className="text-slate-600 mx-auto mb-4" /><h3 className="text-xl font-semibold text-slate-300">No Client Selected</h3><p className="text-slate-500 mt-2">Select a client from the sidebar or add a new one to begin.</p></div></div>;
 ```
 
-## Guide: How to Update Your Live App
+## Guide: The Final Update
 
-Use this simple, three-step guide to deploy the latest bug fixes to your live Vercel website.
+This guide will walk you through fixing the final syntax error and updating your live application.
 
-### **Step 1: Open Your Terminal**
+### **Step 1: Replace the Code on Your Computer**
 
-1.  Open the **Terminal** app on your Mac.
-2.  Make sure you are inside your project folder by running this command:
-    ```bash
-    cd client-tracker
-    ```
+1.  Using **Finder**, go into your `client-tracker/src` folder.
+2.  Open the `App.js` file in a text editor.
+3.  **Select all** the text currently in the file and **delete it**.
+4.  Go to the Canvas on the right titled **"React App Code (Final Vercel Version)"**.
+5.  Click the "Copy" button in the top-right corner of that code block.
+6.  **Paste** this new, clean code into your empty `App.js` file.
+7.  **Save the file.**
 
-### **Step 2: Save and Upload Your Changes**
+### **Step 2: Upload the Fix to GitHub**
 
-1.  Run the following three commands in your terminal, one by one.
+Now, we need to upload this corrected version.
 
-2.  **First, add your changes** to the "staging area."
-    ```bash
-    git add .
-    ```
+1.  Go back to your **Terminal** app.
+2.  Make sure you are inside the `client-tracker` folder.
+3.  Run these three commands one by one:
 
-3.  **Next, save your changes** with a short, descriptive comment.
-    ```bash
-    git commit -m "Fix dropdown interaction and visibility"
-    ```
+    * This adds your saved changes to the next upload.
+        ```bash
+        git add .
+        ```
 
-4.  **Finally, upload your saved changes** to your online GitHub repository.
-    ```bash
-    git push
-    ```
+    * This saves the changes with a new comment.
+        ```bash
+        git commit -m "Fix final syntax error in App.js"
+        ```
 
-### **Step 3: Vercel Deploys Automatically**
+    * This uploads the saved changes to GitHub.
+        ```bash
+        git push
+        ```
 
-That's it! You are done.
+### **Step 3: Check Vercel**
 
-As soon as Vercel sees that you have pushed new changes to your GitHub repository, it will **automatically start a new deployment**.
+As soon as you push these changes, Vercel will automatically start a new deployment. You can go to your Vercel dashboard to watch its progress.
 
-You can go to your Vercel dashboard to watch the progress. Within a minute or two, your live website will be updated with the latest fix
+This time, the build will succeed, and your application will be live and working correct
