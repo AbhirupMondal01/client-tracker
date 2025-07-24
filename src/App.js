@@ -1,5 +1,5 @@
-// Final Vercel version with all bug fixes
-import React, { useState, useEffect } from 'react';
+// Final Vercel version with all bug fixes for dropdown interaction and visibility
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
     getAuth,
@@ -122,7 +122,7 @@ export default function App() {
             });
             await batch.commit();
             const newClientData = { id: newClientRef.id, name: clientName.trim(), createdAt: new Date() };
-            setClients(prevClients => [...prevClients, newClientData].sort((a, b) => a.createdAt - b.createdAt));
+            setClients(prevClients => [...prevClients, newClientData].sort((a, b) => a.createdAt.seconds - b.createdAt.seconds));
             setSelectedClient(newClientData);
         } catch (e) {
             console.error("Error adding client:", e);
@@ -350,14 +350,34 @@ const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
     );
 };
 
-// --- Task Item Component ---
+// --- Task Item Component (UPDATED with click-to-open logic) ---
 const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const dropdownRef = useRef(null);
+
     const statusConfig = {
         'Pending': { color: 'amber', label: 'Pending' },
         'In Progress': { color: 'sky', label: 'In Progress' },
         'Completed': { color: 'emerald', label: 'Completed' },
     };
     const { color, label } = statusConfig[task.status] || { color: 'slate', label: 'Unknown' };
+
+    const handleStatusSelect = (newStatus) => {
+        onUpdateStatus(task.id, newStatus);
+        setIsDropdownOpen(false);
+    };
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [dropdownRef]);
 
     return (
         <tr className="group transition-colors hover:bg-slate-800/40">
@@ -366,19 +386,21 @@ const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
                 <span className={`${task.status === 'Completed' ? 'line-through text-slate-500' : ''}`}>{task.name}</span>
             </td>
             <td className="p-4 whitespace-nowrap">
-                <div className="relative group/status">
-                    <button className={`flex items-center gap-2 text-xs font-semibold rounded-full py-1 px-3 bg-${color}-500/10 text-${color}-400`}>
+                <div className="relative" ref={dropdownRef}>
+                    <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className={`flex items-center gap-2 text-xs font-semibold rounded-full py-1 px-3 bg-${color}-500/10 text-${color}-400`}>
                         <span className={`w-2 h-2 rounded-full bg-current`}></span>
                         {label}
                         <ChevronDown size={14} />
                     </button>
-                    <div className="absolute top-full mt-2 right-0 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-1 z-50 opacity-0 pointer-events-none group-hover/status:opacity-100 group-hover/status:pointer-events-auto transition-opacity">
-                        {Object.keys(statusConfig).map(status => (
-                            <a href="#" key={status} onClick={(e) => { e.preventDefault(); onUpdateStatus(task.id, status); }} className="block w-full text-left px-3 py-1.5 text-xs rounded-md text-slate-300 hover:bg-indigo-500">
-                                {statusConfig[status].label}
-                            </a>
-                        ))}
-                    </div>
+                    {isDropdownOpen && (
+                        <div className="absolute top-full mt-2 right-0 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-1 z-50">
+                            {Object.keys(statusConfig).map(status => (
+                                <a href="#" key={status} onClick={(e) => { e.preventDefault(); handleStatusSelect(status); }} className="block w-full text-left px-3 py-1.5 text-xs rounded-md text-slate-300 hover:bg-indigo-500">
+                                    {statusConfig[status].label}
+                                </a>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </td>
             <td className="p-4 text-right">
@@ -394,4 +416,43 @@ const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
 const LoadingState = () => <div className="flex items-center justify-center h-screen bg-slate-900"><div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-cyan-500"></div></div>;
 const ErrorState = ({ message }) => <div className="flex items-center justify-center h-screen bg-slate-900"><div className="text-center p-8 bg-slate-800 rounded-lg shadow-xl"><ServerCrash size={48} className="text-red-500 mx-auto mb-4" /><h3 className="text-xl font-bold text-red-500">An Error Occurred</h3><p className="text-slate-400 mt-2">{message}</p></div></div>;
 const EmptyState = () => <div className="flex items-center justify-center h-full"><div className="text-center p-10 border-2 border-dashed border-slate-700 rounded-2xl"><FolderKanban size={56} className="text-slate-600 mx-auto mb-4" /><h3 className="text-xl font-semibold text-slate-300">No Client Selected</h3><p className="text-slate-500 mt-2">Select a client from the sidebar or add a new one to begin.</p></div></div>;
+```
 
+## Guide: How to Update Your Live App
+
+Use this simple, three-step guide to deploy the latest bug fixes to your live Vercel website.
+
+### **Step 1: Open Your Terminal**
+
+1.  Open the **Terminal** app on your Mac.
+2.  Make sure you are inside your project folder by running this command:
+    ```bash
+    cd client-tracker
+    ```
+
+### **Step 2: Save and Upload Your Changes**
+
+1.  Run the following three commands in your terminal, one by one.
+
+2.  **First, add your changes** to the "staging area."
+    ```bash
+    git add .
+    ```
+
+3.  **Next, save your changes** with a short, descriptive comment.
+    ```bash
+    git commit -m "Fix dropdown interaction and visibility"
+    ```
+
+4.  **Finally, upload your saved changes** to your online GitHub repository.
+    ```bash
+    git push
+    ```
+
+### **Step 3: Vercel Deploys Automatically**
+
+That's it! You are done.
+
+As soon as Vercel sees that you have pushed new changes to your GitHub repository, it will **automatically start a new deployment**.
+
+You can go to your Vercel dashboard to watch the progress. Within a minute or two, your live website will be updated with the latest fix
