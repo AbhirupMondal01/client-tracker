@@ -1,4 +1,4 @@
-// Final Vercel version with reordering functionality and bug fixes
+// Final Vercel version with working search and bug fixes
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -51,6 +51,7 @@ export default function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [searchTerm, setSearchTerm] = useState(''); // State for the search term
 
     // --- Firebase Initialization and Authentication ---
     useEffect(() => {
@@ -127,11 +128,6 @@ export default function App() {
             });
             await batch.commit();
             const newClientData = { id: newClientRef.id, name: clientName.trim(), createdAt: new Date() };
-            setClients(prevClients => [...prevClients, newClientData].sort((a, b) => {
-                const timeA = a.createdAt?.seconds || 0;
-                const timeB = b.createdAt?.seconds || 0;
-                return timeA - timeB;
-            }));
             setSelectedClient(newClientData);
         } catch (e) {
             console.error("Error adding client:", e);
@@ -157,6 +153,11 @@ export default function App() {
         }
     };
     
+    // Filter clients based on the search term
+    const filteredClients = clients.filter(client =>
+        client.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
     // --- Render Logic ---
     if (loading) return <LoadingState />;
     if (error) return <ErrorState message={error} />;
@@ -164,7 +165,7 @@ export default function App() {
     return (
         <div className="flex h-screen bg-slate-900 text-white font-sans overflow-hidden">
             <Sidebar
-                clients={clients}
+                clients={filteredClients}
                 selectedClient={selectedClient}
                 setSelectedClient={setSelectedClient}
                 onAddClient={addClient}
@@ -172,7 +173,11 @@ export default function App() {
                 setIsCollapsed={setIsSidebarCollapsed}
             />
             <main className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarCollapsed ? 'ml-16' : 'md:ml-72'}`}>
-                <Header client={selectedClient}/>
+                <Header
+                    client={selectedClient}
+                    searchTerm={searchTerm}
+                    setSearchTerm={setSearchTerm}
+                />
                 <div className="flex-1 p-6 lg:p-8 overflow-y-auto">
                     {selectedClient ? (
                         <ClientDetail
@@ -259,7 +264,7 @@ const Sidebar = ({ clients, selectedClient, setSelectedClient, onAddClient, isCo
 };
 
 // --- Header Component ---
-const Header = ({ client }) => {
+const Header = ({ client, searchTerm, setSearchTerm }) => {
     return (
         <header className="flex-shrink-0 bg-slate-900/50 backdrop-blur-lg border-b border-slate-800/50 p-4 flex items-center justify-between z-20">
             <div>
@@ -269,7 +274,13 @@ const Header = ({ client }) => {
             <div className="flex items-center gap-4">
                 <div className="relative hidden md:block">
                     <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-slate-500" />
-                    <input type="text" placeholder="Search..." className="w-full max-w-xs bg-slate-800 border border-slate-700 rounded-lg py-2 pl-10 pr-4 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" />
+                    <input
+                        type="text"
+                        placeholder="Search clients..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full max-w-xs bg-slate-800 border border-slate-700 rounded-lg py-2 pl-10 pr-4 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                    />
                 </div>
                 <button className="p-2 rounded-full text-slate-400 hover:bg-slate-800 hover:text-white transition-colors">
                     <Bell size={20} />
