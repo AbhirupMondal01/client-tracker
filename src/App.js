@@ -1,4 +1,4 @@
-// Final Vercel version with working search and bug fixes
+// Final Vercel version with Board View, Priorities, and Due Dates
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -19,10 +19,9 @@ import {
     getDocs,
     orderBy
 } from 'firebase/firestore';
-import { Plus, Trash2, ChevronDown, FolderKanban, ServerCrash, GripVertical, Search, Bell, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, FolderKanban, ServerCrash, GripVertical, Search, Bell, ChevronsLeft, ChevronsRight, LayoutGrid, List, Flag } from 'lucide-react';
 
 // --- Firebase Configuration for Vercel ---
-// This code correctly reads the secret keys from your Vercel project settings.
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_API_KEY,
   authDomain: process.env.REACT_APP_AUTH_DOMAIN,
@@ -51,7 +50,7 @@ export default function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-    const [searchTerm, setSearchTerm] = useState(''); // State for the search term
+    const [searchTerm, setSearchTerm] = useState('');
 
     // --- Firebase Initialization and Authentication ---
     useEffect(() => {
@@ -63,11 +62,8 @@ export default function App() {
             setAuth(firebaseAuth);
 
             const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                } else {
-                    await signInAnonymously(firebaseAuth);
-                }
+                if (user) setUserId(user.uid);
+                else await signInAnonymously(firebaseAuth);
                 setIsAuthReady(true);
             });
             return () => unsubscribe();
@@ -96,14 +92,12 @@ export default function App() {
             } else if (clientsData.length === 0) {
                 setSelectedClient(null);
             }
-
             setLoading(false);
         }, (err) => {
             console.error("Error fetching clients:", err);
             setError("Failed to load client data.");
             setLoading(false);
         });
-
         return () => unsubscribe();
     }, [isAuthReady, db, userId]);
 
@@ -123,7 +117,9 @@ export default function App() {
                     name: taskName,
                     status: 'Pending',
                     createdAt: new Date(),
-                    order: index // Assign initial order
+                    order: index,
+                    priority: 'Normal',
+                    dueDate: null
                 });
             });
             await batch.commit();
@@ -140,11 +136,9 @@ export default function App() {
         try {
             const batch = writeBatch(db);
             const clientDocRef = doc(db, `users/${userId}/clients`, clientId);
-            
             const tasksCollectionPath = `users/${userId}/clients/${clientId}/tasks`;
             const tasksSnapshot = await getDocs(query(collection(db, tasksCollectionPath)));
             tasksSnapshot.forEach(taskDoc => batch.delete(taskDoc.ref));
-            
             batch.delete(clientDocRef);
             await batch.commit();
         } catch (e) {
@@ -153,12 +147,10 @@ export default function App() {
         }
     };
     
-    // Filter clients based on the search term
     const filteredClients = clients.filter(client =>
         client.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // --- Render Logic ---
     if (loading) return <LoadingState />;
     if (error) return <ErrorState message={error} />;
     
@@ -196,7 +188,7 @@ export default function App() {
     );
 }
 
-// --- Sidebar Component ---
+// --- Sidebar, Header, and State Components (mostly unchanged) ---
 const Sidebar = ({ clients, selectedClient, setSelectedClient, onAddClient, isCollapsed, setIsCollapsed }) => {
     const [newClientName, setNewClientName] = useState('');
     const [isAdding, setIsAdding] = useState(false);
@@ -263,7 +255,6 @@ const Sidebar = ({ clients, selectedClient, setSelectedClient, onAddClient, isCo
     );
 };
 
-// --- Header Component ---
 const Header = ({ client, searchTerm, setSearchTerm }) => {
     return (
         <header className="flex-shrink-0 bg-slate-900/50 backdrop-blur-lg border-b border-slate-800/50 p-4 flex items-center justify-between z-20">
@@ -290,12 +281,11 @@ const Header = ({ client, searchTerm, setSearchTerm }) => {
     );
 };
 
-// --- ClientDetail Component ---
+// --- ClientDetail Component (Now with View Switcher) ---
 const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
     const [tasks, setTasks] = useState([]);
     const [newTaskName, setNewTaskName] = useState('');
-    const dragItem = useRef(null);
-    const dragOverItem = useRef(null);
+    const [viewMode, setViewMode] = useState('list'); // 'list' or 'board'
 
     const addTask = async () => {
         if (newTaskName.trim() === '') return;
@@ -304,38 +294,23 @@ const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
             name: newTaskName.trim(),
             status: 'Pending',
             createdAt: new Date(),
-            order: tasks.length // Assign order to new task
+            order: tasks.length,
+            priority: 'Normal',
+            dueDate: null
         });
         setNewTaskName('');
     };
 
-    const updateTaskStatus = async (taskId, newStatus) => {
+    const updateTask = async (taskId, data) => {
         const taskDocRef = doc(db, `users/${userId}/clients/${client.id}/tasks`, taskId);
-        await updateDoc(taskDocRef, { status: newStatus });
+        await updateDoc(taskDocRef, data);
     };
 
     const deleteTask = async (taskId) => {
         const taskDocRef = doc(db, `users/${userId}/clients/${client.id}/tasks`, taskId);
         await deleteDoc(taskDocRef);
     };
-
-    const handleSort = async () => {
-        if (dragItem.current === null || dragOverItem.current === null) return;
-        let _tasks = [...tasks];
-        const draggedItemContent = _tasks.splice(dragItem.current, 1)[0];
-        _tasks.splice(dragOverItem.current, 0, draggedItemContent);
-        dragItem.current = null;
-        dragOverItem.current = null;
-        setTasks(_tasks);
-
-        const batch = writeBatch(db);
-        _tasks.forEach((task, index) => {
-            const taskRef = doc(db, `users/${userId}/clients/${client.id}/tasks`, task.id);
-            batch.update(taskRef, { order: index });
-        });
-        await batch.commit();
-    };
-
+    
     useEffect(() => {
         const tasksCollectionPath = `users/${userId}/clients/${client.id}/tasks`;
         const q = query(collection(db, tasksCollectionPath), orderBy("order", "asc"));
@@ -356,9 +331,15 @@ const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
                     <h2 className="text-3xl font-bold text-white">{client.name}</h2>
                     <p className="text-slate-400">Onboarding Progress</p>
                 </div>
-                <button onClick={() => onDeleteClient(client.id)} className="p-2 rounded-lg text-slate-400 bg-slate-800/50 hover:bg-red-500/20 hover:text-red-400 transition-colors">
-                    <Trash2 size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                    <div className="flex items-center bg-slate-800/50 rounded-lg p-1">
+                        <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'}`}><List size={20}/></button>
+                        <button onClick={() => setViewMode('board')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'board' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'}`}><LayoutGrid size={20}/></button>
+                    </div>
+                    <button onClick={() => onDeleteClient(client.id)} className="p-2 rounded-lg text-slate-400 bg-slate-800/50 hover:bg-red-500/20 hover:text-red-400 transition-colors">
+                        <Trash2 size={20} />
+                    </button>
+                </div>
             </div>
 
             <div className="mb-8 p-6 bg-slate-800/50 rounded-2xl border border-slate-700/50 shadow-2xl shadow-slate-900/50">
@@ -371,67 +352,117 @@ const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
                 </div>
             </div>
 
-            <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 shadow-2xl shadow-slate-900/50">
-                <div className="p-4">
-                    <div className="flex gap-2">
-                        <input type="text" value={newTaskName} onChange={(e) => setNewTaskName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addTask()} placeholder="Add a custom task..." className="flex-grow p-2 text-sm bg-slate-700 border border-slate-600 rounded-md focus:ring-1 focus:ring-indigo-500" />
-                        <button onClick={addTask} disabled={!newTaskName.trim()} className="flex items-center justify-center gap-1 bg-indigo-600 text-white font-semibold py-2 px-3 text-sm rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed">
-                            <Plus size={16} /> Add
-                        </button>
-                    </div>
+            {viewMode === 'list' ? (
+                <ListView tasks={tasks} onUpdateTask={updateTask} onDeleteTask={deleteTask} onAddTask={addTask} newTaskName={newTaskName} setNewTaskName={setNewTaskName} db={db} userId={userId} clientId={client.id} />
+            ) : (
+                <BoardView tasks={tasks} onUpdateTask={updateTask} />
+            )}
+        </div>
+    );
+};
+
+// --- List View Component ---
+const ListView = ({ tasks, onUpdateTask, onDeleteTask, onAddTask, newTaskName, setNewTaskName, db, userId, clientId }) => {
+    const dragItem = useRef(null);
+    const dragOverItem = useRef(null);
+
+    const handleSort = async () => {
+        if (dragItem.current === null || dragOverItem.current === null) return;
+        let _tasks = [...tasks];
+        const draggedItemContent = _tasks.splice(dragItem.current, 1)[0];
+        _tasks.splice(dragOverItem.current, 0, draggedItemContent);
+        dragItem.current = null;
+        dragOverItem.current = null;
+        
+        const batch = writeBatch(db);
+        _tasks.forEach((task, index) => {
+            const taskRef = doc(db, `users/${userId}/clients/${clientId}/tasks`, task.id);
+            batch.update(taskRef, { order: index });
+        });
+        await batch.commit();
+    };
+
+    return (
+        <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 shadow-2xl shadow-slate-900/50">
+            <div className="p-4">
+                <div className="flex gap-2">
+                    <input type="text" value={newTaskName} onChange={(e) => setNewTaskName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && onAddTask()} placeholder="Add a custom task..." className="flex-grow p-2 text-sm bg-slate-700 border border-slate-600 rounded-md focus:ring-1 focus:ring-indigo-500" />
+                    <button onClick={onAddTask} disabled={!newTaskName.trim()} className="flex items-center justify-center gap-1 bg-indigo-600 text-white font-semibold py-2 px-3 text-sm rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed">
+                        <Plus size={16} /> Add
+                    </button>
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                        <tbody className="divide-y divide-slate-700/50">
-                            {tasks.map((task, index) => (
-                                <TaskItem
-                                    key={task.id}
-                                    task={task}
-                                    index={index}
-                                    onUpdateStatus={updateTaskStatus}
-                                    onDelete={deleteTask}
-                                    dragItem={dragItem}
-                                    dragOverItem={dragOverItem}
-                                    handleSort={handleSort}
-                                />
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="min-w-full">
+                    <tbody className="divide-y divide-slate-700/50">
+                        {tasks.map((task, index) => (
+                            <TaskItem
+                                key={task.id}
+                                task={task}
+                                index={index}
+                                onUpdateTask={onUpdateTask}
+                                onDeleteTask={onDeleteTask}
+                                dragItem={dragItem}
+                                dragOverItem={dragOverItem}
+                                handleSort={handleSort}
+                            />
+                        ))}
+                    </tbody>
+                </table>
             </div>
         </div>
     );
 };
 
-// --- Task Item Component ---
-const TaskItem = ({ task, index, onUpdateStatus, onDelete, dragItem, dragOverItem, handleSort }) => {
-    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-    const dropdownRef = useRef(null);
-
-    const statusConfig = {
-        'Pending': { color: 'amber', label: 'Pending' },
-        'In Progress': { color: 'sky', label: 'In Progress' },
-        'Completed': { color: 'emerald', label: 'Completed' },
-    };
-    const { color, label } = statusConfig[task.status] || { color: 'slate', label: 'Unknown' };
-
-    const handleStatusSelect = (newStatus) => {
-        onUpdateStatus(task.id, newStatus);
-        setIsDropdownOpen(false);
+// --- Board View Component ---
+const BoardView = ({ tasks, onUpdateTask }) => {
+    const statuses = ['Pending', 'In Progress', 'Completed'];
+    
+    const handleDrop = (e, newStatus) => {
+        const taskId = e.dataTransfer.getData("taskId");
+        onUpdateTask(taskId, { status: newStatus });
     };
 
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-                setIsDropdownOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
-    }, [dropdownRef]);
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {statuses.map(status => (
+                <div
+                    key={status}
+                    onDrop={(e) => handleDrop(e, status)}
+                    onDragOver={(e) => e.preventDefault()}
+                    className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50"
+                >
+                    <h3 className="font-bold text-lg mb-4 text-white">{status}</h3>
+                    <div className="space-y-4">
+                        {tasks.filter(task => task.status === status).map(task => (
+                            <TaskCard key={task.id} task={task} onUpdateTask={onUpdateTask} />
+                        ))}
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+};
 
+// --- Task Card Component (for Board View) ---
+const TaskCard = ({ task, onUpdateTask }) => {
+    return (
+        <div
+            draggable
+            onDragStart={(e) => e.dataTransfer.setData("taskId", task.id)}
+            className="bg-slate-800 p-4 rounded-lg shadow-lg cursor-grab active:cursor-grabbing"
+        >
+            <p className="font-semibold text-white mb-2">{task.name}</p>
+            <div className="flex items-center justify-between text-sm text-slate-400">
+                <PriorityPicker task={task} onUpdateTask={onUpdateTask} />
+                <DatePicker task={task} onUpdateTask={onUpdateTask} />
+            </div>
+        </div>
+    );
+};
+
+// --- Task Item Component (for List View) ---
+const TaskItem = ({ task, index, onUpdateTask, onDeleteTask, dragItem, dragOverItem, handleSort }) => {
     return (
         <tr
             className="group transition-colors hover:bg-slate-800/40"
@@ -445,30 +476,85 @@ const TaskItem = ({ task, index, onUpdateStatus, onDelete, dragItem, dragOverIte
             <td className="p-4 w-full text-sm font-medium text-slate-200">
                 <span className={`${task.status === 'Completed' ? 'line-through text-slate-500' : ''}`}>{task.name}</span>
             </td>
-            <td className="p-4 whitespace-nowrap">
-                <div className="relative" ref={dropdownRef}>
-                    <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className={`flex items-center gap-2 text-xs font-semibold rounded-full py-1 px-3 bg-${color}-500/10 text-${color}-400`}>
-                        <span className={`w-2 h-2 rounded-full bg-current`}></span>
-                        {label}
-                        <ChevronDown size={14} />
-                    </button>
-                    {isDropdownOpen && (
-                        <div className="absolute top-full mt-2 right-0 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-1 z-50">
-                            {Object.keys(statusConfig).map(status => (
-                                <a href="#" key={status} onClick={(e) => { e.preventDefault(); handleStatusSelect(status); }} className="block w-full text-left px-3 py-1.5 text-xs rounded-md text-slate-300 hover:bg-indigo-500">
-                                    {statusConfig[status].label}
-                                </a>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </td>
+            <td className="p-4 whitespace-nowrap"><PriorityPicker task={task} onUpdateTask={onUpdateTask} /></td>
+            <td className="p-4 whitespace-nowrap"><DatePicker task={task} onUpdateTask={onUpdateTask} /></td>
+            <td className="p-4 whitespace-nowrap"><StatusPicker task={task} onUpdateTask={onUpdateTask} /></td>
             <td className="p-4 text-right">
-                <button onClick={() => onDelete(task.id)} className="text-slate-500 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity">
+                <button onClick={() => onDeleteTask(task.id)} className="text-slate-500 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity">
                     <Trash2 size={16} />
                 </button>
             </td>
         </tr>
+    );
+};
+
+// --- Reusable Picker Components ---
+const StatusPicker = ({ task, onUpdateTask }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const ref = useRef(null);
+    const statusConfig = {
+        'Pending': { color: 'amber', label: 'Pending' },
+        'In Progress': { color: 'sky', label: 'In Progress' },
+        'Completed': { color: 'emerald', label: 'Completed' },
+    };
+    const { color, label } = statusConfig[task.status] || { color: 'slate', label: 'Unknown' };
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (ref.current && !ref.current.contains(e.target)) setIsOpen(false);
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [ref]);
+
+    return (
+        <div className="relative" ref={ref}>
+            <button onClick={() => setIsOpen(!isOpen)} className={`flex items-center gap-2 text-xs font-semibold rounded-full py-1 px-3 bg-${color}-500/10 text-${color}-400`}>
+                <span className={`w-2 h-2 rounded-full bg-current`}></span>{label}<ChevronDown size={14} />
+            </button>
+            {isOpen && (
+                <div className="absolute top-full mt-2 right-0 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-1 z-50">
+                    {Object.keys(statusConfig).map(status => (
+                        <a href="#" key={status} onClick={(e) => { e.preventDefault(); onUpdateTask(task.id, { status }); setIsOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs rounded-md text-slate-300 hover:bg-indigo-500">{statusConfig[status].label}</a>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const PriorityPicker = ({ task, onUpdateTask }) => {
+    const priorityConfig = {
+        'Urgent': { color: 'red', icon: <Flag size={14} className="text-red-500" /> },
+        'High': { color: 'orange', icon: <Flag size={14} className="text-orange-500" /> },
+        'Normal': { color: 'sky', icon: <Flag size={14} className="text-sky-500" /> },
+        'Low': { color: 'slate', icon: <Flag size={14} className="text-slate-500" /> },
+    };
+    return (
+        <div className="flex items-center gap-1">
+            {priorityConfig[task.priority]?.icon || <Flag size={14} className="text-slate-500" />}
+            <select
+                value={task.priority}
+                onChange={(e) => onUpdateTask(task.id, { priority: e.target.value })}
+                className="bg-transparent text-slate-300 text-sm border-none focus:ring-0"
+            >
+                {Object.keys(priorityConfig).map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+        </div>
+    );
+};
+
+const DatePicker = ({ task, onUpdateTask }) => {
+    const handleDateChange = (e) => {
+        onUpdateTask(task.id, { dueDate: e.target.value || null });
+    };
+    return (
+        <input
+            type="date"
+            value={task.dueDate || ''}
+            onChange={handleDateChange}
+            className="bg-transparent text-slate-300 text-sm border-none focus:ring-0 p-0"
+        />
     );
 };
 
