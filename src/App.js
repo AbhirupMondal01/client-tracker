@@ -372,8 +372,8 @@ const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
                         {label}
                         <ChevronDown size={14} />
                     </button>
-                    {/* UPDATED: Dropdown now opens upwards to prevent being clipped by the table body */}
-                    <div className="absolute bottom-full mb-2 right-0 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-1 z-50 opacity-0 pointer-events-none group-hover/status:opacity-100 group-hover/status:pointer-events-auto transition-opacity">
+                    {/* UPDATED: Dropdown now opens downwards to prevent being clipped by the table body */}
+                    <div className="absolute top-full mt-2 right-0 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-1 z-50 opacity-0 pointer-events-none group-hover/status:opacity-100 group-hover/status:pointer-events-auto transition-opacity">
                         {Object.keys(statusConfig).map(status => (
                             <a href="#" key={status} onClick={(e) => { e.preventDefault(); onUpdateStatus(task.id, status); }} className="block w-full text-left px-3 py-1.5 text-xs rounded-md text-slate-300 hover:bg-indigo-500">
                                 {statusConfig[status].label}
@@ -395,4 +395,47 @@ const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
 const LoadingState = () => <div className="flex items-center justify-center h-screen bg-slate-900"><div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-cyan-500"></div></div>;
 const ErrorState = ({ message }) => <div className="flex items-center justify-center h-screen bg-slate-900"><div className="text-center p-8 bg-slate-800 rounded-lg shadow-xl"><ServerCrash size={48} className="text-red-500 mx-auto mb-4" /><h3 className="text-xl font-bold text-red-500">An Error Occurred</h3><p className="text-slate-400 mt-2">{message}</p></div></div>;
 const EmptyState = () => <div className="flex items-center justify-center h-full"><div className="text-center p-10 border-2 border-dashed border-slate-700 rounded-2xl"><FolderKanban size={56} className="text-slate-600 mx-auto mb-4" /><h3 className="text-xl font-semibold text-slate-300">No Client Selected</h3><p className="text-slate-500 mt-2">Select a client from the sidebar or add a new one to begin.</p></div></div>;
+```
 
+## Guide: How to Update Your Live App
+
+Use this simple, three-step guide whenever you have made changes to your code on your computer and want to see those changes on your live Vercel website.
+
+### **Prerequisites**
+
+* You have made and saved changes to one or more files in your `client-tracker` folder (for example, you've edited `src/App.js`).
+
+### **Step 1: Open Your Terminal**
+
+1.  Open the **Terminal** app on your Mac.
+2.  Make sure you are inside your project folder by running this command:
+    ```bash
+    cd client-tracker
+    ```
+
+### **Step 2: Save and Upload Your Changes**
+
+1.  Run the following three commands in your terminal, one by one.
+
+2.  **First, add your changes** to the "staging area." This tells the system which files you want to include in the next update. The `.` means "add all changes."
+    ```bash
+    git add .
+    ```
+
+3.  **Next, save your changes** with a short, descriptive comment. This creates a checkpoint in your project's history.
+    ```bash
+    git commit -m "Fix delete button and task dropdown visibility"
+    ```
+
+4.  **Finally, upload your saved changes** to your online GitHub repository.
+    ```bash
+    git push
+    ```
+
+### **Step 3: Vercel Deploys Automatically**
+
+That's it! You are done.
+
+As soon as Vercel sees that you have pushed new changes to your GitHub repository, it will **automatically start a new deployment**.
+
+You can go to your Vercel dashboard to watch the progress. Within a minute or two, your live website will be updated with your latest chang
