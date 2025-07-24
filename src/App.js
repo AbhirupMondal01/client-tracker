@@ -1,4 +1,4 @@
-// Final Vercel version with all bug fixes for dropdown interaction and visibility
+// Final Vercel version with reordering functionality and bug fixes
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -116,9 +116,14 @@ export default function App() {
             batch.set(newClientRef, { name: clientName.trim(), createdAt: new Date() });
 
             const tasksCollectionPath = `users/${userId}/clients/${newClientRef.id}/tasks`;
-            STANDARD_ONBOARDING_TASKS.forEach(taskName => {
+            STANDARD_ONBOARDING_TASKS.forEach((taskName, index) => {
                 const newTaskRef = doc(collection(db, tasksCollectionPath));
-                batch.set(newTaskRef, { name: taskName, status: 'Pending', createdAt: new Date() });
+                batch.set(newTaskRef, {
+                    name: taskName,
+                    status: 'Pending',
+                    createdAt: new Date(),
+                    order: index // Assign initial order
+                });
             });
             await batch.commit();
             const newClientData = { id: newClientRef.id, name: clientName.trim(), createdAt: new Date() };
@@ -278,11 +283,18 @@ const Header = ({ client }) => {
 const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
     const [tasks, setTasks] = useState([]);
     const [newTaskName, setNewTaskName] = useState('');
+    const dragItem = useRef(null);
+    const dragOverItem = useRef(null);
 
     const addTask = async () => {
         if (newTaskName.trim() === '') return;
         const tasksCollectionPath = `users/${userId}/clients/${client.id}/tasks`;
-        await addDoc(collection(db, tasksCollectionPath), { name: newTaskName.trim(), status: 'Pending', createdAt: new Date() });
+        await addDoc(collection(db, tasksCollectionPath), {
+            name: newTaskName.trim(),
+            status: 'Pending',
+            createdAt: new Date(),
+            order: tasks.length // Assign order to new task
+        });
         setNewTaskName('');
     };
 
@@ -296,9 +308,26 @@ const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
         await deleteDoc(taskDocRef);
     };
 
+    const handleSort = async () => {
+        if (dragItem.current === null || dragOverItem.current === null) return;
+        let _tasks = [...tasks];
+        const draggedItemContent = _tasks.splice(dragItem.current, 1)[0];
+        _tasks.splice(dragOverItem.current, 0, draggedItemContent);
+        dragItem.current = null;
+        dragOverItem.current = null;
+        setTasks(_tasks);
+
+        const batch = writeBatch(db);
+        _tasks.forEach((task, index) => {
+            const taskRef = doc(db, `users/${userId}/clients/${client.id}/tasks`, task.id);
+            batch.update(taskRef, { order: index });
+        });
+        await batch.commit();
+    };
+
     useEffect(() => {
         const tasksCollectionPath = `users/${userId}/clients/${client.id}/tasks`;
-        const q = query(collection(db, tasksCollectionPath), orderBy("createdAt", "asc"));
+        const q = query(collection(db, tasksCollectionPath), orderBy("order", "asc"));
         const unsubscribe = onSnapshot(q, (snapshot) => {
             setTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         });
@@ -343,8 +372,17 @@ const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
                 <div className="overflow-x-auto">
                     <table className="min-w-full">
                         <tbody className="divide-y divide-slate-700/50">
-                            {tasks.map(task => (
-                                <TaskItem key={task.id} task={task} onUpdateStatus={updateTaskStatus} onDelete={deleteTask} />
+                            {tasks.map((task, index) => (
+                                <TaskItem
+                                    key={task.id}
+                                    task={task}
+                                    index={index}
+                                    onUpdateStatus={updateTaskStatus}
+                                    onDelete={deleteTask}
+                                    dragItem={dragItem}
+                                    dragOverItem={dragOverItem}
+                                    handleSort={handleSort}
+                                />
                             ))}
                         </tbody>
                     </table>
@@ -354,8 +392,8 @@ const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
     );
 };
 
-// --- Task Item Component (UPDATED with click-to-open logic) ---
-const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
+// --- Task Item Component ---
+const TaskItem = ({ task, index, onUpdateStatus, onDelete, dragItem, dragOverItem, handleSort }) => {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const dropdownRef = useRef(null);
 
@@ -384,7 +422,14 @@ const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
     }, [dropdownRef]);
 
     return (
-        <tr className="group transition-colors hover:bg-slate-800/40">
+        <tr
+            className="group transition-colors hover:bg-slate-800/40"
+            draggable
+            onDragStart={() => (dragItem.current = index)}
+            onDragEnter={() => (dragOverItem.current = index)}
+            onDragEnd={handleSort}
+            onDragOver={(e) => e.preventDefault()}
+        >
             <td className="p-4 w-6 text-slate-500 cursor-grab group-hover:text-slate-300"><GripVertical size={16} /></td>
             <td className="p-4 w-full text-sm font-medium text-slate-200">
                 <span className={`${task.status === 'Completed' ? 'line-through text-slate-500' : ''}`}>{task.name}</span>
