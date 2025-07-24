@@ -1,4 +1,4 @@
-// Final Vercel version with bug fixes
+// Final Vercel version with bug fixes for delete and dropdown visibility
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -121,7 +121,9 @@ export default function App() {
                 batch.set(newTaskRef, { name: taskName, status: 'Pending', createdAt: new Date() });
             });
             await batch.commit();
-            setSelectedClient({ id: newClientRef.id, name: clientName.trim(), createdAt: new Date() });
+            const newClientData = { id: newClientRef.id, name: clientName.trim(), createdAt: new Date() };
+            setClients(prevClients => [...prevClients, newClientData]);
+            setSelectedClient(newClientData);
         } catch (e) {
             console.error("Error adding client:", e);
             setError("Failed to add new client.");
@@ -305,7 +307,7 @@ const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
 
     return (
         <div className="animate-fade-in-up">
-            <div className="mb-8 flex justify-between items-center">
+            <div className="mb-8 flex justify-between items-start">
                 <div>
                     <h2 className="text-3xl font-bold text-white">{client.name}</h2>
                     <p className="text-slate-400">Onboarding Progress</p>
@@ -370,7 +372,8 @@ const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
                         {label}
                         <ChevronDown size={14} />
                     </button>
-                    <div className="absolute top-full mt-2 right-0 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-1 z-50 opacity-0 pointer-events-none group-hover/status:opacity-100 group-hover/status:pointer-events-auto transition-opacity">
+                    {/* UPDATED: Dropdown now opens upwards to prevent being clipped by the table body */}
+                    <div className="absolute bottom-full mb-2 right-0 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-1 z-50 opacity-0 pointer-events-none group-hover/status:opacity-100 group-hover/status:pointer-events-auto transition-opacity">
                         {Object.keys(statusConfig).map(status => (
                             <a href="#" key={status} onClick={(e) => { e.preventDefault(); onUpdateStatus(task.id, status); }} className="block w-full text-left px-3 py-1.5 text-xs rounded-md text-slate-300 hover:bg-indigo-500">
                                 {statusConfig[status].label}
