@@ -1,10 +1,12 @@
-// Final Vercel version with Board View, Priorities, and Due Dates
+// Final Vercel version with Google Auth, Board View, Priorities, and Due Dates
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
     getAuth,
-    signInAnonymously,
-    onAuthStateChanged
+    onAuthStateChanged,
+    GoogleAuthProvider,
+    signInWithPopup,
+    signOut
 } from 'firebase/auth';
 import {
     getFirestore,
@@ -19,7 +21,7 @@ import {
     getDocs,
     orderBy
 } from 'firebase/firestore';
-import { Plus, Trash2, ChevronDown, FolderKanban, ServerCrash, GripVertical, Search, Bell, ChevronsLeft, ChevronsRight, LayoutGrid, List, Flag } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, FolderKanban, ServerCrash, GripVertical, Search, Bell, ChevronsLeft, ChevronsRight, LayoutGrid, List, Flag, LogOut } from 'lucide-react';
 
 // --- Firebase Configuration for Vercel ---
 const firebaseConfig = {
@@ -41,18 +43,12 @@ const STANDARD_ONBOARDING_TASKS = [
 // --- Main App Component ---
 export default function App() {
     // --- State Management ---
-    const [db, setDb] = useState(null);
     const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    const [clients, setClients] = useState([]);
-    const [selectedClient, setSelectedClient] = useState(null);
+    const [db, setDb] = useState(null);
+    const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
 
-    // --- Firebase Initialization and Authentication ---
+    // --- Firebase Initialization ---
     useEffect(() => {
         try {
             const app = initializeApp(firebaseConfig);
@@ -61,24 +57,53 @@ export default function App() {
             setDb(firestoreDb);
             setAuth(firebaseAuth);
 
-            const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
-                if (user) setUserId(user.uid);
-                else await signInAnonymously(firebaseAuth);
-                setIsAuthReady(true);
+            const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+                setUser(user);
+                setLoading(false);
             });
             return () => unsubscribe();
         } catch (e) {
             console.error("Firebase initialization error:", e);
-            setError("There was a problem initializing the application.");
             setLoading(false);
         }
     }, []);
 
-    // --- Data Fetching (Clients) ---
+    const signInWithGoogle = async () => {
+        if (!auth) return;
+        const provider = new GoogleAuthProvider();
+        try {
+            await signInWithPopup(auth, provider);
+        } catch (error) {
+            console.error("Error signing in with Google:", error);
+        }
+    };
+
+    if (loading) return <LoadingState />;
+
+    return (
+        <>
+            {user ? (
+                <TrackerApp user={user} db={db} auth={auth} />
+            ) : (
+                <LoginScreen onSignIn={signInWithGoogle} />
+            )}
+        </>
+    );
+}
+
+// --- Main Tracker Application Component ---
+const TrackerApp = ({ user, db, auth }) => {
+    const [clients, setClients] = useState([]);
+    const [selectedClient, setSelectedClient] = useState(null);
+    const [loadingClients, setLoadingClients] = useState(true);
+    const [error, setError] = useState(null);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+
     useEffect(() => {
-        if (!isAuthReady || !db || !userId) return;
-        setLoading(true);
-        const clientsCollectionPath = `users/${userId}/clients`;
+        if (!db || !user) return;
+        setLoadingClients(true);
+        const clientsCollectionPath = `users/${user.uid}/clients`;
         const q = query(collection(db, clientsCollectionPath), orderBy("createdAt", "asc"));
 
         const unsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -92,25 +117,24 @@ export default function App() {
             } else if (clientsData.length === 0) {
                 setSelectedClient(null);
             }
-            setLoading(false);
+            setLoadingClients(false);
         }, (err) => {
             console.error("Error fetching clients:", err);
             setError("Failed to load client data.");
-            setLoading(false);
+            setLoadingClients(false);
         });
         return () => unsubscribe();
-    }, [isAuthReady, db, userId]);
+    }, [db, user, selectedClient]);
 
-    // --- CRUD Operations ---
     const addClient = async (clientName) => {
-        if (clientName.trim() === '' || !db || !userId) return;
+        if (clientName.trim() === '' || !db || !user) return;
         try {
             const batch = writeBatch(db);
-            const clientsCollectionPath = `users/${userId}/clients`;
+            const clientsCollectionPath = `users/${user.uid}/clients`;
             const newClientRef = doc(collection(db, clientsCollectionPath));
             batch.set(newClientRef, { name: clientName.trim(), createdAt: new Date() });
 
-            const tasksCollectionPath = `users/${userId}/clients/${newClientRef.id}/tasks`;
+            const tasksCollectionPath = `users/${user.uid}/clients/${newClientRef.id}/tasks`;
             STANDARD_ONBOARDING_TASKS.forEach((taskName, index) => {
                 const newTaskRef = doc(collection(db, tasksCollectionPath));
                 batch.set(newTaskRef, {
@@ -123,8 +147,7 @@ export default function App() {
                 });
             });
             await batch.commit();
-            const newClientData = { id: newClientRef.id, name: clientName.trim(), createdAt: new Date() };
-            setSelectedClient(newClientData);
+            setSelectedClient({ id: newClientRef.id, name: clientName.trim(), createdAt: new Date() });
         } catch (e) {
             console.error("Error adding client:", e);
             setError("Failed to add new client.");
@@ -132,11 +155,11 @@ export default function App() {
     };
 
     const deleteClient = async (clientId) => {
-        if (!db || !userId) return;
+        if (!db || !user) return;
         try {
             const batch = writeBatch(db);
-            const clientDocRef = doc(db, `users/${userId}/clients`, clientId);
-            const tasksCollectionPath = `users/${userId}/clients/${clientId}/tasks`;
+            const clientDocRef = doc(db, `users/${user.uid}/clients`, clientId);
+            const tasksCollectionPath = `users/${user.uid}/clients/${clientId}/tasks`;
             const tasksSnapshot = await getDocs(query(collection(db, tasksCollectionPath)));
             tasksSnapshot.forEach(taskDoc => batch.delete(taskDoc.ref));
             batch.delete(clientDocRef);
@@ -146,23 +169,33 @@ export default function App() {
             setError("Failed to delete client.");
         }
     };
+
+    const handleSignOut = async () => {
+        try {
+            await signOut(auth);
+        } catch (error) {
+            console.error("Error signing out:", error);
+        }
+    };
     
     const filteredClients = clients.filter(client =>
         client.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    if (loading) return <LoadingState />;
+    if (loadingClients) return <LoadingState />;
     if (error) return <ErrorState message={error} />;
-    
+
     return (
         <div className="flex h-screen bg-slate-900 text-white font-sans overflow-hidden">
             <Sidebar
+                user={user}
                 clients={filteredClients}
                 selectedClient={selectedClient}
                 setSelectedClient={setSelectedClient}
                 onAddClient={addClient}
                 isCollapsed={isSidebarCollapsed}
                 setIsCollapsed={setIsSidebarCollapsed}
+                onSignOut={handleSignOut}
             />
             <main className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarCollapsed ? 'ml-16' : 'md:ml-72'}`}>
                 <Header
@@ -176,7 +209,7 @@ export default function App() {
                             key={selectedClient.id}
                             client={selectedClient}
                             db={db}
-                            userId={userId}
+                            userId={user.uid}
                             onDeleteClient={deleteClient}
                         />
                     ) : (
@@ -186,10 +219,41 @@ export default function App() {
             </main>
         </div>
     );
-}
+};
+
+// --- Login Screen Component ---
+const LoginScreen = ({ onSignIn }) => {
+    return (
+        <div className="flex items-center justify-center h-screen bg-slate-900">
+            <div className="text-center p-10 bg-slate-800/50 border border-slate-700/50 rounded-2xl shadow-2xl max-w-sm mx-auto">
+                <img
+                    src="https://www.sell.do/assets/selldo_v3/logo-da9a7228f4926c9ee96bf0bbc9664a44.png"
+                    alt="App Logo"
+                    className="h-10 mx-auto mb-6"
+                />
+                <h1 className="text-2xl font-bold text-white mb-2">Client Onboarding</h1>
+                <p className="text-slate-400 mb-8">Sign in to continue to your tracker.</p>
+                <button
+                    onClick={onSignIn}
+                    className="w-full flex items-center justify-center gap-3 bg-white text-slate-800 font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-slate-200 transition-colors"
+                >
+                    <svg className="w-6 h-6" viewBox="0 0 48 48">
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                        <path fill="none" d="M0 0h48v48H0z"></path>
+                    </svg>
+                    Sign in with Google
+                </button>
+            </div>
+        </div>
+    );
+};
+
 
 // --- Sidebar, Header, and State Components (mostly unchanged) ---
-const Sidebar = ({ clients, selectedClient, setSelectedClient, onAddClient, isCollapsed, setIsCollapsed }) => {
+const Sidebar = ({ user, clients, selectedClient, setSelectedClient, onAddClient, isCollapsed, setIsCollapsed, onSignOut }) => {
     const [newClientName, setNewClientName] = useState('');
     const [isAdding, setIsAdding] = useState(false);
 
@@ -251,6 +315,20 @@ const Sidebar = ({ clients, selectedClient, setSelectedClient, onAddClient, isCo
                     ))}
                 </ul>
             </nav>
+            <div className="p-4 border-t border-slate-800">
+                <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`}>
+                    <img src={user.photoURL || `https://placehold.co/40x40/475569/E2E8F0?text=${user.displayName ? user.displayName[0] : 'U'}`} alt="User" className="w-8 h-8 rounded-full" />
+                    {!isCollapsed && (
+                        <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-white truncate">{user.displayName || 'User'}</p>
+                            <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                        </div>
+                    )}
+                    <button onClick={onSignOut} title="Sign Out" className="p-2 rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white transition-colors">
+                        <LogOut size={18} />
+                    </button>
+                </div>
+            </div>
         </aside>
     );
 };
@@ -430,7 +508,7 @@ const BoardView = ({ tasks, onUpdateTask }) => {
                     key={status}
                     onDrop={(e) => handleDrop(e, status)}
                     onDragOver={(e) => e.preventDefault()}
-                    className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50"
+                    className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 min-h-[200px]"
                 >
                     <h3 className="font-bold text-lg mb-4 text-white">{status}</h3>
                     <div className="space-y-4">
