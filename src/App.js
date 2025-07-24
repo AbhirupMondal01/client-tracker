@@ -1,4 +1,4 @@
-// Final Vercel version using process.env
+// Final Vercel version with bug fixes
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -81,23 +81,21 @@ export default function App() {
     useEffect(() => {
         if (!isAuthReady || !db || !userId) return;
         setLoading(true);
-        // This database path is for your standalone Vercel app
         const clientsCollectionPath = `users/${userId}/clients`;
         const q = query(collection(db, clientsCollectionPath), orderBy("createdAt", "asc"));
 
         const unsubscribe = onSnapshot(q, (querySnapshot) => {
             const clientsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setClients(clientsData);
-            if (!selectedClient && clientsData.length > 0) {
+            
+            if (selectedClient && !clientsData.some(c => c.id === selectedClient.id)) {
+                setSelectedClient(clientsData.length > 0 ? clientsData[0] : null);
+            } else if (!selectedClient && clientsData.length > 0) {
                 setSelectedClient(clientsData[0]);
-            } else if (selectedClient) {
-                const stillExists = clientsData.some(c => c.id === selectedClient.id);
-                if (!stillExists) {
-                    setSelectedClient(clientsData.length > 0 ? clientsData[0] : null);
-                }
             } else if (clientsData.length === 0) {
                 setSelectedClient(null);
             }
+
             setLoading(false);
         }, (err) => {
             console.error("Error fetching clients:", err);
@@ -129,6 +127,24 @@ export default function App() {
             setError("Failed to add new client.");
         }
     };
+
+    const deleteClient = async (clientId) => {
+        if (!db || !userId) return;
+        try {
+            const batch = writeBatch(db);
+            const clientDocRef = doc(db, `users/${userId}/clients`, clientId);
+            
+            const tasksCollectionPath = `users/${userId}/clients/${clientId}/tasks`;
+            const tasksSnapshot = await getDocs(query(collection(db, tasksCollectionPath)));
+            tasksSnapshot.forEach(taskDoc => batch.delete(taskDoc.ref));
+            
+            batch.delete(clientDocRef);
+            await batch.commit();
+        } catch (e) {
+            console.error("Error deleting client:", e);
+            setError("Failed to delete client.");
+        }
+    };
     
     // --- Render Logic ---
     if (loading) return <LoadingState />;
@@ -153,6 +169,7 @@ export default function App() {
                             client={selectedClient}
                             db={db}
                             userId={userId}
+                            onDeleteClient={deleteClient}
                         />
                     ) : (
                         <EmptyState />
@@ -177,7 +194,7 @@ const Sidebar = ({ clients, selectedClient, setSelectedClient, onAddClient, isCo
     };
 
     return (
-        <aside className={`fixed top-0 left-0 h-full bg-slate-900/70 backdrop-blur-lg border-r border-slate-700/50 flex flex-col z-20 transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-72'}`}>
+        <aside className={`fixed top-0 left-0 h-full bg-slate-900/70 backdrop-blur-lg border-r border-slate-700/50 flex flex-col z-30 transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-72'}`}>
             <div className={`p-4 border-b border-slate-800 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
                 {!isCollapsed && (
                     <img
@@ -233,7 +250,7 @@ const Sidebar = ({ clients, selectedClient, setSelectedClient, onAddClient, isCo
 // --- Header Component ---
 const Header = ({ client }) => {
     return (
-        <header className="flex-shrink-0 bg-slate-900/50 backdrop-blur-lg border-b border-slate-800/50 p-4 flex items-center justify-between">
+        <header className="flex-shrink-0 bg-slate-900/50 backdrop-blur-lg border-b border-slate-800/50 p-4 flex items-center justify-between z-20">
             <div>
                 <h2 className="text-xl font-bold text-white">{client ? client.name : 'Dashboard'}</h2>
                 <p className="text-sm text-slate-400">{client ? 'Onboarding Details' : 'Please select a client'}</p>
@@ -252,12 +269,12 @@ const Header = ({ client }) => {
 };
 
 // --- ClientDetail Component ---
-const ClientDetail = ({ client, db, userId }) => {
+const ClientDetail = ({ client, db, userId, onDeleteClient }) => {
     const [tasks, setTasks] = useState([]);
     const [newTaskName, setNewTaskName] = useState('');
 
     const addTask = async () => {
-        if (newTaskName.trim() === '' || !db || !userId) return;
+        if (newTaskName.trim() === '') return;
         const tasksCollectionPath = `users/${userId}/clients/${client.id}/tasks`;
         await addDoc(collection(db, tasksCollectionPath), { name: newTaskName.trim(), status: 'Pending', createdAt: new Date() });
         setNewTaskName('');
@@ -288,6 +305,16 @@ const ClientDetail = ({ client, db, userId }) => {
 
     return (
         <div className="animate-fade-in-up">
+            <div className="mb-8 flex justify-between items-center">
+                <div>
+                    <h2 className="text-3xl font-bold text-white">{client.name}</h2>
+                    <p className="text-slate-400">Onboarding Progress</p>
+                </div>
+                <button onClick={() => onDeleteClient(client.id)} className="p-2 rounded-lg text-slate-400 bg-slate-800/50 hover:bg-red-500/20 hover:text-red-400 transition-colors">
+                    <Trash2 size={20} />
+                </button>
+            </div>
+
             <div className="mb-8 p-6 bg-slate-800/50 rounded-2xl border border-slate-700/50 shadow-2xl shadow-slate-900/50">
                 <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-semibold text-slate-300">Overall Progress</span>
@@ -298,7 +325,7 @@ const ClientDetail = ({ client, db, userId }) => {
                 </div>
             </div>
 
-            <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 overflow-hidden shadow-2xl shadow-slate-900/50">
+            <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 shadow-2xl shadow-slate-900/50">
                 <div className="p-4">
                     <div className="flex gap-2">
                         <input type="text" value={newTaskName} onChange={(e) => setNewTaskName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addTask()} placeholder="Add a custom task..." className="flex-grow p-2 text-sm bg-slate-700 border border-slate-600 rounded-md focus:ring-1 focus:ring-indigo-500" />
@@ -343,7 +370,7 @@ const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
                         {label}
                         <ChevronDown size={14} />
                     </button>
-                    <div className="absolute bottom-full mb-2 right-0 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-1 z-10 opacity-0 pointer-events-none group-hover/status:opacity-100 group-hover/status:pointer-events-auto transition-opacity">
+                    <div className="absolute top-full mt-2 right-0 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-1 z-50 opacity-0 pointer-events-none group-hover/status:opacity-100 group-hover/status:pointer-events-auto transition-opacity">
                         {Object.keys(statusConfig).map(status => (
                             <a href="#" key={status} onClick={(e) => { e.preventDefault(); onUpdateStatus(task.id, status); }} className="block w-full text-left px-3 py-1.5 text-xs rounded-md text-slate-300 hover:bg-indigo-500">
                                 {statusConfig[status].label}
@@ -365,3 +392,4 @@ const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
 const LoadingState = () => <div className="flex items-center justify-center h-screen bg-slate-900"><div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-cyan-500"></div></div>;
 const ErrorState = ({ message }) => <div className="flex items-center justify-center h-screen bg-slate-900"><div className="text-center p-8 bg-slate-800 rounded-lg shadow-xl"><ServerCrash size={48} className="text-red-500 mx-auto mb-4" /><h3 className="text-xl font-bold text-red-500">An Error Occurred</h3><p className="text-slate-400 mt-2">{message}</p></div></div>;
 const EmptyState = () => <div className="flex items-center justify-center h-full"><div className="text-center p-10 border-2 border-dashed border-slate-700 rounded-2xl"><FolderKanban size={56} className="text-slate-600 mx-auto mb-4" /><h3 className="text-xl font-semibold text-slate-300">No Client Selected</h3><p className="text-slate-500 mt-2">Select a client from the sidebar or add a new one to begin.</p></div></div>;
+
