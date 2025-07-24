@@ -420,47 +420,4 @@ const TaskItem = ({ task, onUpdateStatus, onDelete }) => {
 const LoadingState = () => <div className="flex items-center justify-center h-screen bg-slate-900"><div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-cyan-500"></div></div>;
 const ErrorState = ({ message }) => <div className="flex items-center justify-center h-screen bg-slate-900"><div className="text-center p-8 bg-slate-800 rounded-lg shadow-xl"><ServerCrash size={48} className="text-red-500 mx-auto mb-4" /><h3 className="text-xl font-bold text-red-500">An Error Occurred</h3><p className="text-slate-400 mt-2">{message}</p></div></div>;
 const EmptyState = () => <div className="flex items-center justify-center h-full"><div className="text-center p-10 border-2 border-dashed border-slate-700 rounded-2xl"><FolderKanban size={56} className="text-slate-600 mx-auto mb-4" /><h3 className="text-xl font-semibold text-slate-300">No Client Selected</h3><p className="text-slate-500 mt-2">Select a client from the sidebar or add a new one to begin.</p></div></div>;
-```
 
-## Guide: The Final Update
-
-This guide will walk you through fixing the final syntax error and updating your live application.
-
-### **Step 1: Replace the Code on Your Computer**
-
-1.  Using **Finder**, go into your `client-tracker/src` folder.
-2.  Open the `App.js` file in a text editor.
-3.  **Select all** the text currently in the file and **delete it**.
-4.  Go to the Canvas on the right titled **"React App Code (Final Vercel Version)"**.
-5.  Click the "Copy" button in the top-right corner of that code block.
-6.  **Paste** this new, clean code into your empty `App.js` file.
-7.  **Save the file.**
-
-### **Step 2: Upload the Fix to GitHub**
-
-Now, we need to upload this corrected version.
-
-1.  Go back to your **Terminal** app.
-2.  Make sure you are inside the `client-tracker` folder.
-3.  Run these three commands one by one:
-
-    * This adds your saved changes to the next upload.
-        ```bash
-        git add .
-        ```
-
-    * This saves the changes with a new comment.
-        ```bash
-        git commit -m "Fix final syntax error in App.js"
-        ```
-
-    * This uploads the saved changes to GitHub.
-        ```bash
-        git push
-        ```
-
-### **Step 3: Check Vercel**
-
-As soon as you push these changes, Vercel will automatically start a new deployment. You can go to your Vercel dashboard to watch its progress.
-
-This time, the build will succeed, and your application will be live and working correct
